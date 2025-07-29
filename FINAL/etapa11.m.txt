@@ -1,0 +1,69 @@
+% CONFIGURA TU PUERTO Y NOMBRE DE ARCHIVO
+puerto = "COM8";     % Ajusta según tu caso
+baudrate = 115200;
+archivoCSV = "datos_rpm.csv";
+
+% ABRIR PUERTO SERIAL
+s = serialport(puerto, baudrate);
+configureTerminator(s, "LF");
+
+disp("Esperando al Arduino...");
+pause(3);  % Esperar que se reinicie
+
+flush(s);  % Limpiar buffers
+
+% ENVÍA COMANDO PARA INICIAR
+disp("Enviando 'S' para comenzar...");
+writeline(s, "S");
+
+% INICIALIZAR VARIABLES
+datos = [];
+tiempos = [];
+rpms = [];
+
+% CONFIGURAR GRAFICO EN TIEMPO REAL
+figure;
+h = plot(nan, nan, 'LineWidth', 2);
+xlabel('Tiempo [s]');
+ylabel('RPM');
+title('Lectura en tiempo real');
+grid on;
+xlim([0 10]);
+ylim([0 300]);  % Ajusta según tu motor
+hold on;
+
+% LEER DATOS
+disp("Recibiendo y graficando...");
+while true
+    if s.NumBytesAvailable > 0
+        linea = readline(s);
+        if contains(linea, "FIN")
+            break;
+        end
+
+        partes = split(strtrim(linea), ',');
+        if numel(partes) == 2
+            t = str2double(partes{1});
+            rpm = str2double(partes{2});
+            if ~isnan(t) && ~isnan(rpm)
+                datos(end+1, :) = [t, rpm]; %#ok<AGROW>
+                tiempos(end+1) = t;          %#ok<AGROW>
+                rpms(end+1) = rpm;           %#ok<AGROW>
+
+                % ACTUALIZAR GRAFICA
+                set(h, 'XData', tiempos, 'YData', rpms);
+                drawnow limitrate;
+            end
+        end
+    end
+end
+
+% CERRAR PUERTO
+clear s;
+
+% GUARDAR CSV
+T = array2table(datos, 'VariableNames', {'Tiempo_s', 'RPM'});
+writetable(T, archivoCSV);
+
+disp("✅ Listo. Datos guardados en:");
+disp(archivoCSV);

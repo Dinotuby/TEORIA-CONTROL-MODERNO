@@ -1,0 +1,94 @@
+% CONFIGURA TU PUERTO Y NOMBRE DE ARCHIVO
+puerto = "COM8";     % Ajusta según tu caso
+baudrate = 115200;
+archivoCSV = "datos_pid.csv";
+
+% ABRIR PUERTO SERIAL
+s = serialport(puerto, baudrate);
+configureTerminator(s, "LF");
+
+disp("Esperando al Arduino...");
+pause(3);  % Esperar que Arduino se reinicie
+
+flush(s);  % Limpiar buffers
+
+% INICIAR CONTROL EN ARDUINO (envía 'S')
+disp("Enviando 'S' para iniciar...");
+writeline(s, "S");
+
+% VARIABLES PARA DATOS
+datos = [];
+tiempos = [];
+rpms = [];
+pwms = [];
+
+% CONFIGURAR GRÁFICO EN TIEMPO REAL
+figure;
+h1 = subplot(2,1,1);
+plotRPM = plot(nan, nan, 'b', 'LineWidth', 2);
+ylabel('RPM');
+grid on;
+title('RPM vs Tiempo');
+xlim([0 inf]);
+ylim([0 300]); % Ajusta según motor
+
+h2 = subplot(2,1,2);
+plotPWM = plot(nan, nan, 'r', 'LineWidth', 2);
+xlabel('Tiempo [s]');
+ylabel('PWM');
+grid on;
+title('PWM vs Tiempo');
+xlim([0 inf]);
+ylim([0 255]);
+
+hold(h1, 'on');
+hold(h2, 'on');
+
+disp("Recibiendo datos... (Presiona Ctrl+C para detener manualmente)");
+
+try
+    while true
+        if s.NumBytesAvailable > 0
+            linea = readline(s);
+            linea = strtrim(linea);
+            if strcmp(linea, "DETENIDO")
+                disp("Control detenido por Arduino.");
+                break;
+            elseif strcmp(linea, "INICIADO")
+                disp("Control iniciado.");
+                continue;
+            end
+            
+            partes = split(linea, ',');
+            if numel(partes) == 3
+                t = str2double(partes{1});
+                rpm = str2double(partes{2});
+                pwm = str2double(partes{3});
+                
+                if ~isnan(t) && ~isnan(rpm) && ~isnan(pwm)
+                    datos(end+1, :) = [t, rpm, pwm]; %#ok<AGROW>
+                    tiempos(end+1) = t; %#ok<AGROW>
+                    rpms(end+1) = rpm; %#ok<AGROW>
+                    pwms(end+1) = pwm; %#ok<AGROW>
+                    
+                    % Actualizar gráficas
+                    set(plotRPM, 'XData', tiempos, 'YData', rpms);
+                    set(plotPWM, 'XData', tiempos, 'YData', pwms);
+                    drawnow limitrate;
+                end
+            end
+        end
+    end
+catch ME
+    disp("Interrumpido manualmente.");
+end
+
+% CERRAR PUERTO
+clear s;
+
+% GUARDAR CSV
+T = array2table(datos, 'VariableNames', {'Tiempo_s', 'RPM', 'PWM'});
+writetable(T, archivoCSV);
+
+disp("✅ Datos guardados en:");
+disp(archivoCSV);
